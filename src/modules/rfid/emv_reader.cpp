@@ -3,20 +3,19 @@
 #include "BerTlv.h"
 #include "core/display.h"
 #include <globals.h>
-#include "RFID2.h"
 
 
 void EMVReader::setup() {
-    _cancelled = false;
-    switch (bruceConfigPins.rfidModule) {
-        case PN532_I2C_MODULE: _rfid = new PN532(PN532::CONNECTION_TYPE::I2C); break;
-        case PN532_SPI_MODULE: _rfid = new PN532(PN532::CONNECTION_TYPE::SPI); break;
-        default: {
-            // On force le RFID2 si aucun PN532 n'est détecté
-            _rfid = new RFID2(true); 
-            break;
-        }
-    }
+    // On cherche le module RFID standard
+    _rfid = (PN532 *)bruceApp.getModule("PN532");
+
+    // Même si _rfid est vide (null), on ne quitte pas !
+    // Cela permet au menu de rester affiché pour tes tests.
+    
+    returnToMenu = true;
+    display_banner();
+    display_btn_options();
+}
 
 
     _rfid->begin();
