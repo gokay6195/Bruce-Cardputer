@@ -5,7 +5,7 @@
 #include "structs.h"
 #include <RCSwitch.h>
 
-#define _MAX_TRIES 5
+#define _MAX_TRIES 10
 
 class RFScan {
 public:
@@ -49,7 +49,7 @@ private:
     int idx = range_limits[bruceConfigPins.rfScanRange][0];
     float found_freq = 0.f;
     int rssi = -80;
-    int rssiThreshold = -65;
+    int rssiThreshold = -95;
     uint64_t lastSavedKey = 0;
 
     /////////////////////////////////////////////////////////////////////////////////////
