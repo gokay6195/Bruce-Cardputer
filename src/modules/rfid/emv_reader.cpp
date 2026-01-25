@@ -3,7 +3,8 @@
 #include "BerTlv.h"
 #include "core/display.h"
 #include <globals.h>
-#include "rfid2.h"
+#include "RFID2.h"
+
 
 void EMVReader::setup() {
     _cancelled = false;
