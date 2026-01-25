@@ -1,15 +1,12 @@
 #ifndef LITE_VERSION
 #include "emv_reader.hpp"
 #include "BerTlv.h"
-#include "core/display.h"
-#include "globals.h"
+#include <globals.h>
 
 void EMVReader::setup() {
     returnToMenu = true;
-    display_banner();
-    display_btn_options();
 
-    displayInfo("Waiting for EMV card...");
+    // On lance directement la lecture
     EMVCard card = read_emv_card();
     if (_cancelled) return;
     display_emv(card);
@@ -19,6 +16,8 @@ void EMVReader::setup() {
     free(card.validto);
     free(card.aid);
 }
+#endif
+
 
 
 void EMVReader::parse_pan(std::vector<uint8_t> *afl_content, EMVCard *card) {
