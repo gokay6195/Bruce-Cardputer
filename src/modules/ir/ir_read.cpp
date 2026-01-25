@@ -175,18 +175,21 @@ void IrRead::display_btn_options() {
 }
 
 void IrRead::read_signal() {
+    // Si on a déjà capturé un signal, on attend qu'il soit traité
     if (_read_signal) return;
 
-    // Si on décode OU si on voit des pulses (rawlen > 1), on force la capture
-    if (irrecv.decode(&results) || (results.rawlen > 1)) { 
+    // Tentative de décodage OU détection de pulses bruts (pour ta Clio)
+    if (irrecv.decode(&results) || (results.rawlen > 1)) {
         _read_signal = true;
-        raw = true; 
-        
+        raw = true; // On force le mode RAW pour enregistrer le signal de la clé
+
         display_banner();
         padprint("CLIO DETECTED!"); 
-        
+
         String raw_signal = parse_raw_signal();
-        tft.println(raw_signal.substring(0, 45) + (raw_signal.length() > 45 ? "..." : "")); 
+        tft.println(
+            raw_signal.substring(0, 45) + (raw_signal.length() > 45 ? "..." : "")
+        ); 
 
         display_btn_options();
         delay(500);
