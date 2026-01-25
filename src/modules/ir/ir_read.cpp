@@ -175,24 +175,22 @@ void IrRead::display_btn_options() {
 }
 
 void IrRead::read_signal() {
-    if (_read_signal || !irrecv.decode(&results)) return;
+    if (_read_signal) return;
 
-    _read_signal = true;
+    // Si on décode OU si on voit des pulses (rawlen > 1), on force la capture
+    if (irrecv.decode(&results) || (results.rawlen > 1)) { 
+        _read_signal = true;
+        raw = true; 
+        
+        display_banner();
+        padprint("CLIO DETECTED!"); 
+        
+        String raw_signal = parse_raw_signal();
+        tft.println(raw_signal.substring(0, 45) + (raw_signal.length() > 45 ? "..." : "")); 
 
-    // Always switches to RAW data, regardless of the decoding result
-    raw = true;
-
-    display_banner();
-
-    // Dump of signal details
-    padprint("RAW Data Captured:");
-    String raw_signal = parse_raw_signal();
-    tft.println(
-        raw_signal.substring(0, 45) + (raw_signal.length() > 45 ? "..." : "")
-    ); // Shows the RAW signal on the display
-
-    display_btn_options();
-    delay(500);
+        display_btn_options();
+        delay(500);
+    }
 }
 
 void IrRead::discard_signal() {
