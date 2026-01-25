@@ -30,6 +30,7 @@ bool RFID2::begin() {
     bool i2c_check = check_i2c_address(RFID2_I2C_ADDRESS);
 
     mfrc522.PCD_Init();
+    mfrc522.PCD_SetAntennaGain(0x07 << 4);
 
     MFRC522::PCD_Version version = mfrc522.PCD_GetVersion();
 
@@ -376,7 +377,7 @@ int RFID2::authenticate_mifare_classic(byte block) {
             for (size_t i = 0; i < mifKey.length(); i += 2) {
                 keyA.keyByte[i / 2] = strtoul(mifKey.substring(i, i + 2).c_str(), NULL, 16);
             }
-
+        delay(50);
             statusA = mfrc522.PCD_Authenticate(
                 MFRC522::PICC_Command::PICC_CMD_MF_AUTH_KEY_A, block, &keyA, &mfrc522.uid
             );
