@@ -329,7 +329,7 @@ int RFID2::read_mifare_classic_data_sector(byte sector) {
     String strPage;
 
     int authStatus = authenticate_mifare_classic(firstBlock);
-    if (authStatus != SUCCESS) return authStatus;
+    // if (authStatus != SUCCESS) return authStatus; 
 
     for (int8_t blockOffset = 0; blockOffset < no_of_blocks; blockOffset++) {
         strPage = "";
