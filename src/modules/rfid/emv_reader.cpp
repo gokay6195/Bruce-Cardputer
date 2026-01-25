@@ -6,21 +6,16 @@
 
 
 void EMVReader::setup() {
-    // On cherche le module RFID standard
     _rfid = (PN532 *)bruceApp.getModule("PN532");
 
-    // Même si _rfid est vide (null), on ne quitte pas !
-    // Cela permet au menu de rester affiché pour tes tests.
-    
     returnToMenu = true;
     display_banner();
     display_btn_options();
 
+    if (_rfid) {
+        _rfid->begin();
+        nfc = &(_rfid->nfc);
     }
-
-
-    _rfid->begin();
-    nfc = &(_rfid->nfc);
 
     displayInfo("Waiting for EMV card...");
     EMVCard card = read_emv_card();
