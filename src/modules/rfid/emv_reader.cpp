@@ -2,6 +2,7 @@
 #include "emv_reader.hpp"
 #include "BerTlv.h"
 #include "core/display.h"
+#include "core/bruce_app.hpp"
 #include <globals.h>
 
 
