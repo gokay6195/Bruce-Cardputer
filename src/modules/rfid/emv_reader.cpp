@@ -2,21 +2,12 @@
 #include "emv_reader.hpp"
 #include "BerTlv.h"
 #include "core/display.h"
-#include "core/bruce_app.hpp"
-#include <globals.h>
-
+#include "globals.h"
 
 void EMVReader::setup() {
-    _rfid = (PN532 *)bruceApp.getModule("PN532");
-
     returnToMenu = true;
     display_banner();
     display_btn_options();
-
-    if (_rfid) {
-        _rfid->begin();
-        nfc = &(_rfid->nfc);
-    }
 
     displayInfo("Waiting for EMV card...");
     EMVCard card = read_emv_card();
@@ -28,6 +19,7 @@ void EMVReader::setup() {
     free(card.validto);
     free(card.aid);
 }
+
 
 void EMVReader::parse_pan(std::vector<uint8_t> *afl_content, EMVCard *card) {
     auto pos = find(afl_content->begin(), afl_content->end(), 0x5A);
