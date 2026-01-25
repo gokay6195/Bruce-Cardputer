@@ -179,19 +179,11 @@ void IrRead::read_signal() {
 
     if (irrecv.decode(&results)) {
         _read_signal = true;
-        
-        // On affiche juste le bandeau standard de Bruce
         display_banner();
-        
-        // On fait juste une petite pause pour valider la lecture sans saturer
         delay(500);
-        
-        // On affiche les options habituelles (Save, etc.)
         display_btn_options();
     }
 }
-
-
 
 void IrRead::discard_signal() {
     if (!_read_signal) return;
