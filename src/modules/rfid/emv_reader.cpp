@@ -15,7 +15,8 @@ void EMVReader::setup() {
     returnToMenu = true;
     display_banner();
     display_btn_options();
-}
+        }
+    }
 
 
     _rfid->begin();
