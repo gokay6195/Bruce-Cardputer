@@ -12,7 +12,7 @@
 class IrRead {
 public:
     // IRrecv irrecv = IRrecv(bruceConfigPins.irRx);
-    IRrecv irrecv = IRrecv(bruceConfigPins.irRx,1024, 100);
+    IRrecv irrecv = IRrecv(bruceConfigPins.irRx, 1024, 100);
 
     /////////////////////////////////////////////////////////////////////////////////////
     // Constructor
