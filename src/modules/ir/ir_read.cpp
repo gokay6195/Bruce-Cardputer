@@ -177,22 +177,20 @@ void IrRead::display_btn_options() {
 void IrRead::read_signal() {
     if (_read_signal) return;
 
-    if (irrecv.decode(&results) || (results.rawlen > 1)) {
+    if (irrecv.decode(&results)) {
         _read_signal = true;
-        raw = true;
-
+        
+        // On affiche juste le bandeau standard de Bruce
         display_banner();
-        padprint("CLIO DETECTED!"); 
-
-        String raw_signal = parse_raw_signal();
-        tft.println(
-            raw_signal.substring(0, 45) + (raw_signal.length() > 45 ? "..." : "")
-        ); 
-
-        display_btn_options();
+        
+        // On fait juste une petite pause pour valider la lecture sans saturer
         delay(500);
+        
+        // On affiche les options habituelles (Save, etc.)
+        display_btn_options();
     }
 }
+
 
 
 void IrRead::discard_signal() {
