@@ -177,12 +177,20 @@ void IrRead::display_btn_options() {
 void IrRead::read_signal() {
     if (_read_signal) return;
 
-    if (irrecv.decode(&results) || (results.rawlen > 1)) {
+    if (irrecv.decode(&results)) {
         _read_signal = true;
         raw = true;
-        
         display_banner();
-        delay(500);
+        tft.println("SIGNAL DETECTE !"); 
+        delay(1000);
+        display_btn_options();
+    }
+    else if (results.rawlen > 0) {
+        _read_signal = true;
+        raw = true;
+        display_banner();
+        tft.println("SIGNAL BRUT !");
+        delay(1000);
         display_btn_options();
     }
 }
