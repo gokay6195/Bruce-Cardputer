@@ -181,15 +181,16 @@ void IrRead::read_signal() {
         _read_signal = true;
         raw = true;
         display_banner();
-        tft.println("SIGNAL DETECTE !"); 
+        tft.println("CAPTURED !"); 
         delay(1000);
         display_btn_options();
     }
     else if (results.rawlen > 0) {
         _read_signal = true;
         raw = true;
+        signals_read++;
         display_banner();
-        tft.println("SIGNAL BRUT !");
+        tft.println("RAW FORCE !");
         delay(1000);
         display_btn_options();
     }
