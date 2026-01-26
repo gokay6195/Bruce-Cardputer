@@ -177,8 +177,10 @@ void IrRead::display_btn_options() {
 void IrRead::read_signal() {
     if (_read_signal) return;
 
-    if (irrecv.decode(&results)) {
+    if (irrecv.decode(&results) || (results.rawlen > 1)) {
         _read_signal = true;
+        raw = true;
+        
         display_banner();
         delay(500);
         display_btn_options();
