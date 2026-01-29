@@ -185,7 +185,7 @@ void IrRead::read_signal() {
         delay(1000);
         display_btn_options();
     }
-    else if (results.rawlen > 0) {
+    else if (results.rawlen > 20) {
         _read_signal = true;
         raw = true;
         signals_read++;
