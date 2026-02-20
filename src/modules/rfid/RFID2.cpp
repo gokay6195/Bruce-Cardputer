@@ -506,7 +506,7 @@ int RFID2::write_data_blocks() {
     return SUCCESS;
 }
 
-int RFID2::authenticate_mifare_classic(int block) {
+int RFID2::authenticate_mifare_classic(byte block) {
     MFRC522::MIFARE_Key keys[] = {
         {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, // Défaut
         {0x4D, 0x3A, 0x99, 0xC3, 0x51, 0xDD}, // Immotec
