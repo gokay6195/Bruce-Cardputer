@@ -376,11 +376,11 @@ int RFID2::authenticate_mifare_classic(byte block) {
         for (int k = 0; k < 6; k++) { key.keyByte[k] = dict_keys[i][k]; }
 
         // Test Clé A
-        status = mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, trailerBlock, &key, &(mfrc522.uid));
+        status = mfrc522.PCD_Authenticate(MFRC522::PICC_Command::PICC_CMD_MF_AUTH_KEY_A, trailerBlock, &key, &(mfrc522.uid));
         if (status == MFRC522::StatusCode::STATUS_OK) return SUCCESS;
 
         // Test Clé B
-        status = mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_B, trailerBlock, &key, &(mfrc522.uid));
+        status = mfrc522.PCD_Authenticate(MFRC522::PICC_Command::PICC_CMD_MF_AUTH_KEY_B, trailerBlock, &key, &(mfrc522.uid));
         if (status == MFRC522::StatusCode::STATUS_OK) return SUCCESS;
     }
     return TAG_AUTH_ERROR;
