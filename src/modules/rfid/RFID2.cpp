@@ -506,6 +506,25 @@ int RFID2::write_data_blocks() {
     return SUCCESS;
 }
 
+int RFID2::authenticate_mifare_classic(int block) {
+    MFRC522::MIFARE_Key keys[] = {
+        {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, // Défaut
+        {0x4D, 0x3A, 0x99, 0xC3, 0x51, 0xDD}, // Immotec
+        {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5}, // Standard A
+        {0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5}  // Standard B
+    };
+
+    byte sector = block / 4;
+    byte trailerBlock = sector * 4 + 3;
+    MFRC522::StatusCode status;
+
+    for (int i = 0; i < 4; i++) {
+        status = mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, trailerBlock, &keys[i], &(mfrc522.uid));
+        if (status == MFRC522::StatusCode::STATUS_OK) return SUCCESS;
+    }
+    return FAILURE;
+}
+
 bool RFID2::write_mifare_classic_data_block(int block, String data) {
     data.replace(" ", "");
     byte size = data.length() / 2;
