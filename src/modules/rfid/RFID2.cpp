@@ -371,6 +371,7 @@ int RFID2::authenticate_mifare_classic(byte block) {
     MFRC522::StatusCode status;
 
     for (int i = 0; i < 15; i++) {
+        delay(50);
         MFRC522::MIFARE_Key key;
         for (int k = 0; k < 6; k++) { key.keyByte[k] = dict_keys[i][k]; }
 
