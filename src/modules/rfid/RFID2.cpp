@@ -388,7 +388,6 @@ int RFID2::authenticate_mifare_classic(byte block) {
     byte trailerBlock = sector * 4 + 3;
     MFRC522::StatusCode status;
 
-    // C'est ICI qu'on change le 50 par 80
     for (int i = 0; i < 80; i++) { 
         delay(100); 
         MFRC522::MIFARE_Key key;
