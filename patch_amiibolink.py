@@ -3,25 +3,25 @@ import glob
 
 Import("env")
 
-def patch_amiibolink():
-    """Patch ESP Amiibolink to include Arduino.h (fixes 'Serial' and 'delay' not declared)"""
-    lib_paths = glob.glob(".pio/libdeps/*/ESP Amiibolink/src/amiibolink.cpp")
-    
+def patch_lib(file_glob, include_name):
+    """Patch une lib externe pour ajouter Arduino.h"""
+    lib_paths = glob.glob(file_glob)
     for path in lib_paths:
         with open(path, 'r') as f:
             content = f.read()
-        
-        # Check if already patched
         if '#include <Arduino.h>' in content:
             print(f"Already patched: {path}")
             continue
-        
-        # Add Arduino.h include at the top
         content = '#include <Arduino.h>\n' + content
-        
         with open(path, 'w') as f:
             f.write(content)
-        
         print(f"Patched: {path}")
 
-patch_amiibolink()
+def patch_external_libs():
+    """Patch toutes les libs externes qui ont besoin d'Arduino.h"""
+    # Patch ESP Amiibolink
+    patch_lib(".pio/libdeps/*/ESP Amiibolink/src/amiibolink.cpp", "amiibolink")
+    # Patch ESP Chameleon Ultra
+    patch_lib(".pio/libdeps/*/ESP Chameleon Ultra/src/chameleonUltra.cpp", "chameleonUltra")
+
+patch_external_libs()
