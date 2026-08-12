@@ -2,7 +2,7 @@
  * @file RFID2.h
  * @author Rennan Cockles (https://github.com/rennancockles)
  * @brief Read and Write RFID tags using RFID2 module from M5Stack
- * @version 0.1
+ * @version 0.2 - Improved by community
  * @date 2024-08-19
  */
 
@@ -10,6 +10,9 @@
 #include <MFRC522Driver.h>
 #include <MFRC522DriverPinSimple.h>
 #include <MFRC522v2.h>
+
+// Nouveau code retour : lecture partielle (certains secteurs verrouillés)
+#define PARTIAL_SUCCESS 5
 
 class RFID2 : public RFIDInterface {
 public:
@@ -62,7 +65,9 @@ private:
     int read_mifare_ultralight_data_blocks();
 
     int write_data_blocks();
-    bool write_mifare_classic_data_block(int block, String data);
+    // Signature mise à jour : do_auth=false permet d'éviter de ré-authentifier
+    // à chaque bloc quand on écrit plusieurs blocs d'un même secteur
+    bool write_mifare_classic_data_block(int block, String data, bool do_auth = true);
     bool write_mifare_ultralight_data_block(int block, String data);
 
     int erase_data_blocks();
