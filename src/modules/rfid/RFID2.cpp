@@ -4,17 +4,6 @@
  * @brief Read and Write RFID tags using RFID2 module from M5Stack
  * @version 0.2 - Improved by community
  * @date 2024-08-19
- * 
- * IMPROVEMENTS:
- * - Dictionary-based key brute-force (80 common keys)
- * - Per-sector key caching (memorize working key per sector)
- * - Partial dump mode (read unlocked sectors even if others fail)
- * - Retry mechanism (3 attempts per sector)
- * - Reduced delay between key tests (10ms instead of 100ms)
- * - Auth status verification restored (no more garbage reads)
- * - Clone uses dictionary keys too
- * - Progress display during brute-force
- * - Optimized write: auth once per sector
  */
 
 #include "RFID2.h"
@@ -27,9 +16,6 @@
 
 #define RFID2_I2C_ADDRESS 0x28
 
-// ============================================================================
-// DICTIONNAIRE DE CLÉS MIFARE CLASSIC (80 clés les plus communes)
-// ============================================================================
 static const uint8_t DICT_KEYS[80][6] = {
     {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}, {0xA0,0xA1,0xA2,0xA3,0xA4,0xA5}, {0xB0,0xB1,0xB2,0xB3,0xB4,0xB5},
     {0x4D,0x3A,0x99,0xC3,0x51,0xDD}, {0x1A,0x98,0x2C,0x7E,0x45,0x9A}, {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF},
@@ -63,45 +49,28 @@ static const uint8_t DICT_KEYS[80][6] = {
 #define AUTH_RETRY_COUNT 3
 #define KEY_TEST_DELAY_MS 10
 
-// ============================================================================
-// CONSTRUCTEUR / DESTRUCTEUR
-// ============================================================================
-
 RFID2::RFID2(bool use_i2c) : _use_i2c(use_i2c) {
     if (use_i2c)
-        _driver =
-            new MFRC522DriverI2C{RFID2_I2C_ADDRESS, bruceConfigPins.i2c_bus.sda, bruceConfigPins.i2c_bus.scl};
+        _driver = new MFRC522DriverI2C{RFID2_I2C_ADDRESS, bruceConfigPins.i2c_bus.sda, bruceConfigPins.i2c_bus.scl};
     else _driver = new MFRC522DriverSPI{ss_pin, SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN};
     mfrc522.SetDriver(*_driver);
 }
 
 RFID2::~RFID2() { delete _driver; }
 
-// ============================================================================
-// INITIALISATION
-// ============================================================================
-
 bool RFID2::begin() {
     bool i2c_check = check_i2c_address(RFID2_I2C_ADDRESS);
-
     mfrc522.PCD_Init();
     mfrc522.PCD_SetAntennaGain(0x07 << 4);
-
     MFRC522::PCD_Version version = mfrc522.PCD_GetVersion();
-
     return i2c_check || version != MFRC522::PCD_Version::Version_Unknown;
 }
-
-// ============================================================================
-// DÉTECTION CARTE
-// ============================================================================
 
 bool RFID2::PICC_IsNewCardPresent() {
     byte bufferATQA[2];
     byte bufferSize = sizeof(bufferATQA);
     byte result = mfrc522.PICC_RequestA(bufferATQA, &bufferSize);
-    bool bl_result =
-        (result == MFRC522::StatusCode::STATUS_OK || result == MFRC522::StatusCode::STATUS_COLLISION);
+    bool bl_result = (result == MFRC522::StatusCode::STATUS_OK || result == MFRC522::StatusCode::STATUS_COLLISION);
     if (bl_result) {
         printableUID.atqa = "";
         for (byte i = 0; i < bufferSize; i++) {
@@ -114,38 +83,23 @@ bool RFID2::PICC_IsNewCardPresent() {
     return bl_result;
 }
 
-// ============================================================================
-// LECTURE COMPLÈTE
-// ============================================================================
-
 int RFID2::read(int cardBaudRate) {
     pageReadStatus = FAILURE;
-
     if (!PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) return TAG_NOT_PRESENT;
-
     displayInfo("Reading data blocks...");
     pageReadStatus = read_data_blocks();
-    pageReadSuccess = (pageReadStatus == SUCCESS) || (pageReadStatus == PARTIAL_SUCCESS);
+    pageReadSuccess = (pageReadStatus == SUCCESS) || (pageReadStatus == TAG_AUTH_ERROR);
     format_data();
     set_uid();
     return pageReadSuccess ? SUCCESS : FAILURE;
 }
 
-// ============================================================================
-// CLONAGE (avec dictionnaire de clés)
-// ============================================================================
-
 int RFID2::clone() {
-    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) { return TAG_NOT_PRESENT; }
-
+    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) return TAG_NOT_PRESENT;
     if (mfrc522.uid.sak != uid.sak) return TAG_NOT_MATCH;
-
-    // Essayer d'abord avec la clé par défaut
     MFRC522Hack mfrc522Hack(mfrc522, true);
     MFRC522::MIFARE_Key key = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     bool success = mfrc522Hack.MIFARE_SetUid(uid.uidByte, uid.size, key, true);
-
-    // Si échec, essayer avec le dictionnaire
     if (!success) {
         for (int i = 0; i < DICT_SIZE && !success; i++) {
             for (int k = 0; k < 6; k++) key.keyByte[k] = DICT_KEYS[i][k];
@@ -153,70 +107,47 @@ int RFID2::clone() {
             if (success) break;
         }
     }
-
     mfrc522.PICC_HaltA();
     return success ? SUCCESS : FAILURE;
 }
 
-// ============================================================================
-// EFFACEMENT
-// ============================================================================
-
 int RFID2::erase() {
-    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) { return TAG_NOT_PRESENT; }
-
+    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) return TAG_NOT_PRESENT;
     int result = erase_data_blocks();
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
     return result;
 }
 
-// ============================================================================
-// ÉCRITURE
-// ============================================================================
-
 int RFID2::write(int cardBaudRate) {
-    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) { return TAG_NOT_PRESENT; }
-
+    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) return TAG_NOT_PRESENT;
     if (mfrc522.uid.sak != uid.sak) return TAG_NOT_MATCH;
-
     int result = write_data_blocks();
-
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
     return result;
 }
 
 int RFID2::write_ndef() {
-    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) { return TAG_NOT_PRESENT; }
-
+    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) return TAG_NOT_PRESENT;
     int result = write_ndef_blocks();
-
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
     return result;
 }
 
-// ============================================================================
-// CHARGEMENT / SAUVEGARDE
-// ============================================================================
-
 int RFID2::load() {
     String filepath;
     File file;
     FS *fs;
-
     if (!getFsStorage(fs)) return FAILURE;
     filepath = loopSD(*fs, true, "RFID|NFC", "/BruceRFID");
     file = fs->open(filepath, FILE_READ);
-
-    if (!file) { return FAILURE; }
-
+    if (!file) return FAILURE;
     String line;
     String strData;
     strAllPages = "";
     pageReadSuccess = true;
-
     while (file.available()) {
         line = file.readStringUntil('\n');
         strData = line.substring(line.indexOf(":") + 1);
@@ -229,18 +160,15 @@ int RFID2::load() {
         if (line.startsWith("Pages read:")) pageReadSuccess = false;
         if (line.startsWith("Page ")) strAllPages += line + "\n";
     }
-
     file.close();
     delay(100);
     parse_data();
-
     return SUCCESS;
 }
 
 int RFID2::save(String filename) {
     FS *fs;
     if (!getFsStorage(fs)) return FAILURE;
-
     if (!(*fs).exists("/BruceRFID")) (*fs).mkdir("/BruceRFID");
     if ((*fs).exists("/BruceRFID/" + filename + ".rfid")) {
         int i = 1;
@@ -249,9 +177,7 @@ int RFID2::save(String filename) {
         filename += String(i);
     }
     File file = (*fs).open("/BruceRFID/" + filename + ".rfid", FILE_WRITE);
-
-    if (!file) { return FAILURE; }
-
+    if (!file) return FAILURE;
     file.println("Filetype: Bruce RFID File");
     file.println("Version 1");
     file.println("Device type: " + printableUID.picc_type);
@@ -263,20 +189,14 @@ int RFID2::save(String filename) {
     file.println("Pages total: " + String(dataPages));
     if (!pageReadSuccess) file.println("Pages read: " + String(dataPages));
     file.print(strAllPages);
-
     file.close();
     delay(100);
     return SUCCESS;
 }
 
-// ============================================================================
-// UTILITAIRES
-// ============================================================================
-
 String RFID2::get_tag_type() {
     byte piccType = mfrc522.PICC_GetType(mfrc522.uid.sak);
     String tag_type = mfrc522.PICC_GetTypeName(piccType);
-
     if (piccType == MFRC522::PICC_Type::PICC_TYPE_MIFARE_UL) {
         switch (totalPages) {
             case 45: tag_type = "NTAG213"; break;
@@ -285,27 +205,21 @@ String RFID2::get_tag_type() {
             default: break;
         }
     }
-
     return tag_type;
 }
 
 void RFID2::set_uid() {
     uid.sak = mfrc522.uid.sak;
     uid.size = mfrc522.uid.size;
-
-    for (byte i = 0; i < mfrc522.uid.size; i++) { uid.uidByte[i] = mfrc522.uid.uidByte[i]; }
+    for (byte i = 0; i < mfrc522.uid.size; i++) uid.uidByte[i] = mfrc522.uid.uidByte[i];
 }
 
 void RFID2::format_data() {
     byte bcc = 0;
-
     printableUID.picc_type = get_tag_type();
-
     printableUID.sak = mfrc522.uid.sak < 0x10 ? "0" : "";
     printableUID.sak += String(mfrc522.uid.sak, HEX);
     printableUID.sak.toUpperCase();
-
-    // UID
     printableUID.uid = "";
     for (byte i = 0; i < mfrc522.uid.size; i++) {
         printableUID.uid += mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ";
@@ -314,13 +228,9 @@ void RFID2::format_data() {
     }
     printableUID.uid.trim();
     printableUID.uid.toUpperCase();
-
-    // BCC
     printableUID.bcc = bcc < 0x10 ? "0" : "";
     printableUID.bcc += String(bcc, HEX);
     printableUID.bcc.toUpperCase();
-
-    // ATQA
     String atqaPart1 = printableUID.atqa.substring(0, 2);
     String atqaPart2 = printableUID.atqa.substring(3, 5);
     printableUID.atqa = atqaPart2 + " " + atqaPart1;
@@ -334,14 +244,9 @@ void RFID2::parse_data() {
     for (size_t i = 0; i < strUID.length(); i += 2) {
         uid.uidByte[i / 2] = strtoul(strUID.substring(i, i + 2).c_str(), NULL, 16);
     }
-
     printableUID.sak.trim();
     uid.sak = strtoul(printableUID.sak.c_str(), NULL, 16);
 }
-
-// ============================================================================
-// LECTURE DES BLOCS DE DONNÉES
-// ============================================================================
 
 int RFID2::read_data_blocks() {
     dataPages = 0;
@@ -349,212 +254,127 @@ int RFID2::read_data_blocks() {
     int readStatus = FAILURE;
     byte piccType = mfrc522.PICC_GetType(mfrc522.uid.sak);
     strAllPages = "";
-
     switch (piccType) {
         case MFRC522::PICC_Type::PICC_TYPE_MIFARE_MINI:
         case MFRC522::PICC_Type::PICC_TYPE_MIFARE_1K:
         case MFRC522::PICC_Type::PICC_TYPE_MIFARE_4K:
             readStatus = read_mifare_classic_data_blocks(piccType);
             break;
-
         case MFRC522::PICC_Type::PICC_TYPE_MIFARE_UL:
             readStatus = read_mifare_ultralight_data_blocks();
             dataPages = (readStatus == SUCCESS && dataPages > 0) ? dataPages - 1 : dataPages;
             if (totalPages == 0) totalPages = dataPages;
             break;
-
         default: break;
     }
-
     mfrc522.PICC_HaltA();
     return readStatus;
 }
-
-// ============================================================================
-// LECTURE MIFARE CLASSIC (AVEC DUMP PARTIEL ET RETRY)
-// ============================================================================
 
 int RFID2::read_mifare_classic_data_blocks(byte piccType) {
     byte no_of_sectors = 0;
     int sectorReadStatus = FAILURE;
     int sectorsRead = 0;
     int sectorsFailed = 0;
-
     switch (piccType) {
-        case MFRC522::PICC_Type::PICC_TYPE_MIFARE_MINI:
-            no_of_sectors = 5;
-            totalPages = 20;
-            break;
-
-        case MFRC522::PICC_Type::PICC_TYPE_MIFARE_1K:
-            no_of_sectors = 16;
-            totalPages = 64;
-            break;
-
-        case MFRC522::PICC_Type::PICC_TYPE_MIFARE_4K:
-            no_of_sectors = 40;
-            totalPages = 256;
-            break;
-
-        default:
-            break;
+        case MFRC522::PICC_Type::PICC_TYPE_MIFARE_MINI: no_of_sectors = 5; totalPages = 20; break;
+        case MFRC522::PICC_Type::PICC_TYPE_MIFARE_1K: no_of_sectors = 16; totalPages = 64; break;
+        case MFRC522::PICC_Type::PICC_TYPE_MIFARE_4K: no_of_sectors = 40; totalPages = 256; break;
+        default: break;
     }
-
     if (no_of_sectors) {
         for (int8_t i = 0; i < no_of_sectors; i++) {
             sectorReadStatus = read_mifare_classic_data_sector(i);
-            if (sectorReadStatus == SUCCESS) {
-                sectorsRead++;
-            } else {
-                sectorsFailed++;
-}
-
-            // Afficher la progression
+            if (sectorReadStatus == SUCCESS) sectorsRead++;
+            else sectorsFailed++;
             String progressMsg = "Sector " + String(i + 1) + "/" + String(no_of_sectors);
-            if (sectorsFailed > 0) {
-                progressMsg += " (" + String(sectorsFailed) + " locked)";
-            }
+            if (sectorsFailed > 0) progressMsg += " (" + String(sectorsFailed) + " locked)";
             displayInfo(progressMsg);
         }
     }
-
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
-
-    // Si au moins un secteur a été lu, c'est un succès partiel
     if (sectorsRead > 0) {
         if (sectorsFailed > 0) {
             displayInfo("Partial: " + String(sectorsRead) + "/" + String(no_of_sectors) + " OK");
-            return PARTIAL_SUCCESS;
+            return SUCCESS;
         }
         return SUCCESS;
     }
-
     return FAILURE;
 }
-
-// ============================================================================
-// LECTURE D'UN SECTEUR MIFARE CLASSIC (AVEC AUTH + RETRY)
-// ============================================================================
 
 int RFID2::read_mifare_classic_data_sector(byte sector) {
     byte status;
     byte firstBlock;
     byte no_of_blocks;
-
-    if (sector < 32) {
-        no_of_blocks = 4;
-        firstBlock = sector * no_of_blocks;
-    } else if (sector < 40) {
-        no_of_blocks = 16;
-        firstBlock = 128 + (sector - 32) * no_of_blocks;
-    } else {
-        return FAILURE;
-    }
-
+    if (sector < 32) { no_of_blocks = 4; firstBlock = sector * no_of_blocks; }
+    else if (sector < 40) { no_of_blocks = 16; firstBlock = 128 + (sector - 32) * no_of_blocks; }
+    else return FAILURE;
     byte byteCount;
     byte buffer[18];
     byte blockAddr;
     String strPage;
-
-    // Authentification avec retry
     int authStatus = TAG_AUTH_ERROR;
     for (int retry = 0; retry < AUTH_RETRY_COUNT && authStatus != SUCCESS; retry++) {
         authStatus = authenticate_mifare_classic(firstBlock);
-        if (authStatus != SUCCESS && retry < AUTH_RETRY_COUNT - 1) {
-            delay(KEY_TEST_DELAY_MS * 5); // Délai plus long entre retries
-        }
+        if (authStatus != SUCCESS && retry < AUTH_RETRY_COUNT - 1) delay(KEY_TEST_DELAY_MS * 5);
     }
-
-    // VÉRIFICATION AUTH RESTAURÉE : si auth échoue, on ne lit pas le garbage
     if (authStatus != SUCCESS) {
-        // Marquer les blocs comme verrouillés dans le dump
         for (int8_t blockOffset = 0; blockOffset < no_of_blocks; blockOffset++) {
             strAllPages += "Page " + String(dataPages) + ": -- LOCKED --\n";
             dataPages++;
         }
         return TAG_AUTH_ERROR;
     }
-
     for (int8_t blockOffset = 0; blockOffset < no_of_blocks; blockOffset++) {
         strPage = "";
         blockAddr = firstBlock + blockOffset;
         byteCount = sizeof(buffer);
-
         status = mfrc522.MIFARE_Read(blockAddr, buffer, &byteCount);
-        if (status != MFRC522::StatusCode::STATUS_OK) { 
-            // Si lecture échoue malgré auth OK, on marque comme erreur
+        if (status != MFRC522::StatusCode::STATUS_OK) {
             strAllPages += "Page " + String(dataPages) + ": -- READ ERROR --\n";
             dataPages++;
             continue;
         }
-
         for (byte index = 0; index < 16; index++) {
             strPage += buffer[index] < 0x10 ? F(" 0") : F(" ");
             strPage += String(buffer[index], HEX);
         }
-
         strPage.trim();
         strPage.toUpperCase();
-
         strAllPages += "Page " + String(dataPages) + ": " + strPage + "\n";
         dataPages++;
     }
-
     return SUCCESS;
 }
-
-// ============================================================================
-// AUTHENTIFICATION MIFARE CLASSIC (DICTIONNAIRE OPTIMISÉ)
-// ============================================================================
 
 int RFID2::authenticate_mifare_classic(byte block) {
     byte sector = block / 4;
     byte trailerBlock = sector * 4 + 3;
     MFRC522::StatusCode status;
-    static int lastSuccessfulKeyIndex = -1; // Cache : dernière clé qui a marché
+    static int lastSuccessfulKeyIndex = -1;
     static byte lastSuccessfulSector = 0xFF;
     static bool lastUsedKeyA = true;
-
-    // Si on a déjà une clé qui a marché pour ce secteur, l'essayer d'abord
     if (lastSuccessfulKeyIndex >= 0 && lastSuccessfulSector == sector) {
         MFRC522::MIFARE_Key key;
-        for (int k = 0; k < 6; k++) { key.keyByte[k] = DICT_KEYS[lastSuccessfulKeyIndex][k]; }
-
-        if (lastUsedKeyA) {
-            status = mfrc522.PCD_Authenticate(
-                MFRC522::PICC_Command::PICC_CMD_MF_AUTH_KEY_A, 
-                trailerBlock, &key, &(mfrc522.uid));
-        } else {
-            status = mfrc522.PCD_Authenticate(
-                MFRC522::PICC_Command::PICC_CMD_MF_AUTH_KEY_B, 
-                trailerBlock, &key, &(mfrc522.uid));
-        }
+        for (int k = 0; k < 6; k++) key.keyByte[k] = DICT_KEYS[lastSuccessfulKeyIndex][k];
+        if (lastUsedKeyA) status = mfrc522.PCD_Authenticate(MFRC522::PICC_Command::PICC_CMD_MF_AUTH_KEY_A, trailerBlock, &key, &(mfrc522.uid));
+        else status = mfrc522.PCD_Authenticate(MFRC522::PICC_Command::PICC_CMD_MF_AUTH_KEY_B, trailerBlock, &key, &(mfrc522.uid));
         if (status == MFRC522::StatusCode::STATUS_OK) return SUCCESS;
     }
-
-    // Brute-force sur le dictionnaire
-    for (int i = 0; i < DICT_SIZE; i++) { 
-        delay(KEY_TEST_DELAY_MS); 
-
+    for (int i = 0; i < DICT_SIZE; i++) {
+        delay(KEY_TEST_DELAY_MS);
         MFRC522::MIFARE_Key key;
-        for (int k = 0; k < 6; k++) { key.keyByte[k] = DICT_KEYS[i][k]; }
-
-        // Essayer Key A
-        status = mfrc522.PCD_Authenticate(
-            MFRC522::PICC_Command::PICC_CMD_MF_AUTH_KEY_A, 
-            trailerBlock, &key, &(mfrc522.uid));
+        for (int k = 0; k < 6; k++) key.keyByte[k] = DICT_KEYS[i][k];
+        status = mfrc522.PCD_Authenticate(MFRC522::PICC_Command::PICC_CMD_MF_AUTH_KEY_A, trailerBlock, &key, &(mfrc522.uid));
         if (status == MFRC522::StatusCode::STATUS_OK) {
             lastSuccessfulKeyIndex = i;
             lastSuccessfulSector = sector;
             lastUsedKeyA = true;
             return SUCCESS;
         }
-
-        // Essayer Key B
-        status = mfrc522.PCD_Authenticate(
-            MFRC522::PICC_Command::PICC_CMD_MF_AUTH_KEY_B, 
-            trailerBlock, &key, &(mfrc522.uid));
+        status = mfrc522.PCD_Authenticate(MFRC522::PICC_Command::PICC_CMD_MF_AUTH_KEY_B, trailerBlock, &key, &(mfrc522.uid));
         if (status == MFRC522::StatusCode::STATUS_OK) {
             lastSuccessfulKeyIndex = i;
             lastSuccessfulSector = sector;
@@ -562,13 +382,8 @@ int RFID2::authenticate_mifare_classic(byte block) {
             return SUCCESS;
         }
     }
-
     return TAG_AUTH_ERROR;
 }
-
-// ============================================================================
-// LECTURE MIFARE ULTRALIGHT / NTAG
-// ============================================================================
 
 int RFID2::read_mifare_ultralight_data_blocks() {
     byte status;
@@ -577,7 +392,6 @@ int RFID2::read_mifare_ultralight_data_blocks() {
     byte i;
     byte cc;
     String strPage = "";
-
     for (byte page = 0; page <= 252; page += 4) {
         byteCount = sizeof(buffer);
         status = mfrc522.MIFARE_Read(page, buffer, &byteCount);
@@ -589,9 +403,9 @@ int RFID2::read_mifare_ultralight_data_blocks() {
             if (page + offset == 3) {
                 cc = buffer[4 * offset + 2];
                 switch (cc) {
-                    case 0x12: totalPages = 45; break;   // NTAG213
-                    case 0x3E: totalPages = 135; break;  // NTAG215
-                    case 0x6D: totalPages = 231; break;  // NTAG216
+                    case 0x12: totalPages = 45; break;
+                    case 0x3E: totalPages = 135; break;
+                    case 0x6D: totalPages = 231; break;
                     default: break;
                 }
             }
@@ -602,18 +416,12 @@ int RFID2::read_mifare_ultralight_data_blocks() {
             }
             strPage.trim();
             strPage.toUpperCase();
-
             strAllPages += "Page " + String(dataPages) + ": " + strPage + "\n";
             dataPages++;
         }
     }
-
     return SUCCESS;
 }
-
-// ============================================================================
-// ÉCRITURE DES BLOCS
-// ============================================================================
 
 int RFID2::write_data_blocks() {
     byte piccType = mfrc522.PICC_GetType(mfrc522.uid.sak);
@@ -623,80 +431,61 @@ int RFID2::write_data_blocks() {
     int pageIndex;
     bool blockWriteSuccess;
     int totalSize = strAllPages.length();
-
-    // Pour MIFARE Classic, garder trace du secteur courant pour éviter
-    // de ré-authentifier à chaque bloc
     int currentSector = -1;
-    int currentAuthSector = -1;
-
+    bool sectorAuthenticated = false;
     while (strAllPages.length() > 0) {
         lineBreakIndex = strAllPages.indexOf("\n");
         if (lineBreakIndex == -1) break;
         pageLine = strAllPages.substring(0, lineBreakIndex);
         strAllPages = strAllPages.substring(lineBreakIndex + 1);
-
         pageIndex = pageLine.substring(5, pageLine.indexOf(":")).toInt();
         strBytes = pageLine.substring(pageLine.indexOf(":") + 1);
         strBytes.trim();
-
         if (pageIndex == 0) continue;
-
-        // Sauter les blocs marqués comme verrouillés
         if (strBytes == "-- LOCKED --" || strBytes == "-- READ ERROR --") continue;
-
         switch (piccType) {
             case MFRC522::PICC_Type::PICC_TYPE_MIFARE_MINI:
             case MFRC522::PICC_Type::PICC_TYPE_MIFARE_1K:
             case MFRC522::PICC_Type::PICC_TYPE_MIFARE_4K:
                 if (pageIndex == 0 || (pageIndex + 1) % 4 == 0) continue;
-
-                // Auth une fois par secteur
                 currentSector = pageIndex / 4;
-                if (currentSector != currentAuthSector) {
+                if (!sectorAuthenticated) {
                     if (authenticate_mifare_classic(pageIndex) != SUCCESS) {
                         blockWriteSuccess = false;
                         break;
                     }
-                    currentAuthSector = currentSector;
+                    sectorAuthenticated = true;
+                } else if (pageIndex / 4 != currentSector) {
+                    currentSector = pageIndex / 4;
+                    if (authenticate_mifare_classic(pageIndex) != SUCCESS) {
+                        blockWriteSuccess = false;
+                        break;
+                    }
                 }
-                blockWriteSuccess = write_mifare_classic_data_block(pageIndex, strBytes, false);
+                blockWriteSuccess = write_mifare_classic_data_block(pageIndex, strBytes);
                 break;
-
             case MFRC522::PICC_Type::PICC_TYPE_MIFARE_UL:
                 if (pageIndex < 4 || pageIndex >= dataPages - 5) continue;
                 blockWriteSuccess = write_mifare_ultralight_data_block(pageIndex, strBytes);
                 break;
-
             default: blockWriteSuccess = false; break;
         }
-
         if (!blockWriteSuccess) return FAILURE;
-
         progressHandler(totalSize - strAllPages.length(), totalSize, "Writing data blocks...");
     }
-
     return SUCCESS;
 }
 
-// ============================================================================
-// ÉCRITURE BLOC MIFARE CLASSIC (avec option skip_auth)
-// ============================================================================
-
-bool RFID2::write_mifare_classic_data_block(int block, String data, bool do_auth) {
+bool RFID2::write_mifare_classic_data_block(int block, String data) {
     data.replace(" ", "");
-    if (data.length() != 32) return false; // 16 bytes = 32 hex chars
-
+    if (data.length() != 32) return false;
     byte buffer[16];
-
     for (size_t i = 0; i < data.length(); i += 2) {
         buffer[i / 2] = strtoul(data.substring(i, i + 2).c_str(), NULL, 16);
     }
-
-    if (do_auth && authenticate_mifare_classic(block) != SUCCESS) return false;
-
+    if (authenticate_mifare_classic(block) != SUCCESS) return false;
     byte status = mfrc522.MIFARE_Write((byte)block, buffer, 16);
     if (status != MFRC522::StatusCode::STATUS_OK) return false;
-
     return true;
 }
 
@@ -704,87 +493,62 @@ bool RFID2::write_mifare_ultralight_data_block(int block, String data) {
     data.replace(" ", "");
     byte size = data.length() / 2;
     byte buffer[4];
-
     for (size_t i = 0; i < data.length() && i < 8; i += 2) {
         buffer[i / 2] = strtoul(data.substring(i, i + 2).c_str(), NULL, 16);
     }
-
     byte status = mfrc522.MIFARE_Ultralight_Write((byte)block, buffer, 4);
     if (status != MFRC522::StatusCode::STATUS_OK) return false;
-
     return true;
 }
-
-// ============================================================================
-// EFFACEMENT
-// ============================================================================
 
 int RFID2::erase_data_blocks() {
     byte piccType = mfrc522.PICC_GetType(mfrc522.uid.sak);
     bool blockWriteSuccess;
-
     switch (piccType) {
         case MFRC522::PICC_Type::PICC_TYPE_MIFARE_MINI:
         case MFRC522::PICC_Type::PICC_TYPE_MIFARE_1K:
         case MFRC522::PICC_Type::PICC_TYPE_MIFARE_4K:
             for (byte i = 1; i < 64; i++) {
                 if ((i + 1) % 4 == 0) continue;
-                blockWriteSuccess =
-                    write_mifare_classic_data_block(i, "00000000000000000000000000000000", true);
+                blockWriteSuccess = write_mifare_classic_data_block(i, "00000000000000000000000000000000");
                 if (!blockWriteSuccess) return FAILURE;
             }
             break;
-
         case MFRC522::PICC_Type::PICC_TYPE_MIFARE_UL:
             blockWriteSuccess = write_mifare_ultralight_data_block(4, "0300FE00");
             if (!blockWriteSuccess) return FAILURE;
-
             for (byte i = 5; i < 130; i++) {
                 blockWriteSuccess = write_mifare_ultralight_data_block(i, "00000000");
                 if (!blockWriteSuccess) return FAILURE;
             }
             break;
-
         default: break;
     }
-
     return SUCCESS;
 }
-
-// ============================================================================
-// ÉCRITURE NDEF
-// ============================================================================
 
 int RFID2::write_ndef_blocks() {
     byte piccType = mfrc522.PICC_GetType(mfrc522.uid.sak);
     if (piccType != MFRC522::PICC_Type::PICC_TYPE_MIFARE_UL) return TAG_NOT_MATCH;
-
     byte ndef_size = ndefMessage.messageSize + 3;
     byte payload_size = ndef_size % 4 == 0 ? ndef_size : ndef_size + (4 - (ndef_size % 4));
     byte ndef_payload[payload_size];
     byte i;
-    bool blockWriteSuccess;
-
     ndef_payload[0] = ndefMessage.begin;
     ndef_payload[1] = ndefMessage.messageSize;
     ndef_payload[2] = ndefMessage.header;
     ndef_payload[3] = ndefMessage.tnf;
     ndef_payload[4] = ndefMessage.payloadSize;
     ndef_payload[5] = ndefMessage.payloadType;
-
-    for (i = 0; i < ndefMessage.payloadSize; i++) { ndef_payload[i + 6] = ndefMessage.payload[i]; }
-
+    for (i = 0; i < ndefMessage.payloadSize; i++) ndef_payload[i + 6] = ndefMessage.payload[i];
     ndef_payload[ndef_size - 1] = ndefMessage.end;
-
     if (payload_size > ndef_size) {
-        for (i = ndef_size; i < payload_size; i++) { ndef_payload[i] = 0; }
+        for (i = ndef_size; i < payload_size; i++) ndef_payload[i] = 0;
     }
-
     for (int i = 0; i < payload_size; i += 4) {
         int block = 4 + (i / 4);
         byte status = mfrc522.MIFARE_Ultralight_Write((byte)block, ndef_payload + i, 4);
         if (status != MFRC522::StatusCode::STATUS_OK) return FAILURE;
     }
-
     return SUCCESS;
 }
