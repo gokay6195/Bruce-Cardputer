@@ -125,7 +125,7 @@ int RFID2::read(int cardBaudRate) {
 
     displayInfo("Reading data blocks...");
     pageReadStatus = read_data_blocks();
-    pageReadSuccess = pageReadStatus == SUCCESS || pageReadStatus == PARTIAL_SUCCESS;
+    pageReadSuccess = (pageReadStatus == SUCCESS) || (pageReadStatus == PARTIAL_SUCCESS);
     format_data();
     set_uid();
     return pageReadSuccess ? SUCCESS : FAILURE;
@@ -407,13 +407,7 @@ int RFID2::read_mifare_classic_data_blocks(byte piccType) {
                 sectorsRead++;
             } else {
                 sectorsFailed++;
-                // Mode dump partiel : on continue même si un secteur échoue
-                // mais on arrête si la carte semble déconnectée
-                if (sectorReadStatus == TAG_NOT_PRESENT) {
-                    displayError("Card removed during read!");
-                    break;
-                }
-            }
+}
 
             // Afficher la progression
             String progressMsg = "Sector " + String(i + 1) + "/" + String(no_of_sectors);
@@ -430,7 +424,7 @@ int RFID2::read_mifare_classic_data_blocks(byte piccType) {
     // Si au moins un secteur a été lu, c'est un succès partiel
     if (sectorsRead > 0) {
         if (sectorsFailed > 0) {
-            displayInfo("Partial read: " + String(sectorsRead) + "/" + String(no_of_sectors) + " sectors OK");
+            displayInfo("Partial: " + String(sectorsRead) + "/" + String(no_of_sectors) + " OK");
             return PARTIAL_SUCCESS;
         }
         return SUCCESS;
@@ -476,7 +470,6 @@ int RFID2::read_mifare_classic_data_sector(byte sector) {
     if (authStatus != SUCCESS) {
         // Marquer les blocs comme verrouillés dans le dump
         for (int8_t blockOffset = 0; blockOffset < no_of_blocks; blockOffset++) {
-            blockAddr = firstBlock + blockOffset;
             strAllPages += "Page " + String(dataPages) + ": -- LOCKED --\n";
             dataPages++;
         }
@@ -542,8 +535,8 @@ int RFID2::authenticate_mifare_classic(byte block) {
 
     // Brute-force sur le dictionnaire
     for (int i = 0; i < DICT_SIZE; i++) { 
-        delay(KEY_TEST_DELAY_MS);
-        
+        delay(KEY_TEST_DELAY_MS); 
+
         MFRC522::MIFARE_Key key;
         for (int k = 0; k < 6; k++) { key.keyByte[k] = DICT_KEYS[i][k]; }
 
@@ -693,7 +686,6 @@ bool RFID2::write_mifare_classic_data_block(int block, String data, bool do_auth
     data.replace(" ", "");
     if (data.length() != 32) return false; // 16 bytes = 32 hex chars
 
-    byte size = data.length() / 2;
     byte buffer[16];
 
     for (size_t i = 0; i < data.length(); i += 2) {
