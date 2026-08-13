@@ -5,7 +5,8 @@
  * @version 0.1
  * @date 2024-08-19
  */
-
+#include <Arduino.h>
+#include <algorithm>
 #include "RFIDInterface.h"
 #include <MFRC522Driver.h>
 #include <MFRC522DriverPinSimple.h>
