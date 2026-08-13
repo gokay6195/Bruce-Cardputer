@@ -1,4 +1,6 @@
 #ifndef LITE_VERSION
+#include <Arduino.h>
+#include <algorithm>
 #include "pn532ble.h"
 #include "apdu.h"
 #include "core/display.h"
