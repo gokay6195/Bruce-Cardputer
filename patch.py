@@ -187,11 +187,12 @@ def prepare_www_files():
 
 prepare_www_files()
 
-# --- PATCH AUTOMATIQUE DE LA LIBRAIRIE ESP8266SAM ---
-def patch_esp8266sam():
+# --- PATCHES AUTOMATIQUES DE BIBLIOTHÈQUES ---
+def patch_libraries():
     libdeps_dir = env.get("PROJECT_LIBDEPS_DIR")
     pioenv = env.get("PIOENV")
     if libdeps_dir and pioenv:
+        # Patch ESP8266SAM (yield)
         sam_render_path = join(libdeps_dir, pioenv, "ESP8266SAM", "src", "render.c")
         if exists(sam_render_path):
             with open(sam_render_path, "r") as f:
@@ -202,4 +203,16 @@ def patch_esp8266sam():
                     f.write(content)
                 print("--> ESP8266SAM yield() patche avec succes!")
 
-patch_esp8266sam()
+        # Patch JPEGDecoder (picojpeg init conflict)
+        jpeg_path = join(libdeps_dir, pioenv, "JPEGDecoder", "src", "picojpeg.c")
+        if exists(jpeg_path):
+            with open(jpeg_path, "r") as f:
+                content = f.read()
+            if "static uint8 init(" in content:
+                content = content.replace("static uint8 init(", "static uint8 pico_init_func(")
+                content = content.replace("status = init();", "status = pico_init_func();")
+                with open(jpeg_path, "w") as f:
+                    f.write(content)
+                print("--> JPEGDecoder init() patche avec succes!")
+
+patch_libraries()
