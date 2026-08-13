@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
 import glob
 import gzip
+import os
 from os import makedirs, remove, rename
 from os.path import basename, dirname, exists, isfile, join
 
@@ -16,16 +17,16 @@ Import("env")  # type: ignore
 FRAMEWORK_DIR = env.PioPlatform().get_package_dir("framework-arduinoespressif32-libs")
 board_mcu = env.BoardConfig()
 mcu = board_mcu.get("build.mcu", "")
-patchflag_path = join(FRAMEWORK_DIR,mcu, "lib", ".patched")
+patchflag_path = join(FRAMEWORK_DIR, mcu, "lib", ".patched")
 
 # patch file only if we didn't do it befored
-if not isfile(join(FRAMEWORK_DIR,mcu, "lib", ".patched")):
-    original_file = join(FRAMEWORK_DIR,mcu, "lib", "libnet80211.a")
+if not isfile(join(FRAMEWORK_DIR, mcu, "lib", ".patched")):
+    original_file = join(FRAMEWORK_DIR, mcu, "lib", "libnet80211.a")
     patched_file = join(
         FRAMEWORK_DIR, mcu, "lib", "libnet80211.a.patched"
     )
 
-    if mcu=="esp32c5":
+    if mcu == "esp32c5":
         env.Execute(
             "pio pkg exec -p toolchain-riscv32-esp -- riscv32-esp-elf-objcopy  --weaken-symbol=ieee80211_raw_frame_sanity_check %s %s"
             % (original_file, patched_file)
@@ -155,11 +156,6 @@ def prepare_www_files():
                 else:
                     raise ValueError(f"Unsupported file type: {ext}")
 
-                # # Output minified file
-                # min_file = file + ".min"
-                # with open(min_file, "wb") as minf:
-                #     minf.write(minified)
-
                 dst.write(minified)
 
             with open(gz_file, "rb") as gz:
@@ -190,3 +186,20 @@ def prepare_www_files():
 
 
 prepare_www_files()
+
+# --- PATCH AUTOMATIQUE DE LA LIBRAIRIE ESP8266SAM ---
+def patch_esp8266sam():
+    libdeps_dir = env.get("PROJECT_LIBDEPS_DIR")
+    pioenv = env.get("PIOENV")
+    if libdeps_dir and pioenv:
+        sam_render_path = join(libdeps_dir, pioenv, "ESP8266SAM", "src", "render.c")
+        if exists(sam_render_path):
+            with open(sam_render_path, "r") as f:
+                content = f.read()
+            if "static void yield()" in content:
+                content = content.replace("static void yield()", "// static void yield()")
+                with open(sam_render_path, "w") as f:
+                    f.write(content)
+                print("--> ESP8266SAM yield() patche avec succes!")
+
+patch_esp8266sam()
